@@ -40,7 +40,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
 
     # Check if collection time was provided
     # TODO: Check if not empty - to take into consideration
-    @collection_start_time_utc = Time.now.utc.iso8601
+    @collection_start_time_utc = (Time.now.utc - 3*60).iso8601 #Time.now.utc.iso8601
 
     @pkey_start = -1
     @pkey_end = -1
