@@ -40,7 +40,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
 
     # Check if collection time was provided
     # TODO: Check if not empty - to take into consideration
-    @collection_start_time_utc = Time.now.utc.iso8601
+    @collection_start_time_utc = (Time.now.utc - 3*60).iso8601 #Time.now.utc.iso8601
 
     @pkey_start = -1
     @pkey_end = -1
@@ -56,7 +56,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
   public
   def run(output_queue)
     while !stop?
-      @logger.info("[#{@table_name}] Process re-executed @" + Time.now.to_s);
+      @logger.info("[#{@account_name} #{@table_name}] Process re-executed @" + Time.now.to_s);
       process(output_queue)
       sleep @idle_delay_seconds
     end # while
@@ -74,11 +74,11 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
     # If continuation token exists then use the same query
     if @reversetimestamp
        @pkey_end = partitionkey_from_datetime_reverse( (Time.now.utc - 3*60).iso8601 )
-       @logger.info("[#{@table_name}] Query starts: #{datetime_from_partitionkey_reverse(@pkey_start)} and ends #{datetime_from_partitionkey_reverse(@pkey_end)}")
+       @logger.info("[#{@account_name} #{@table_name}] Query starts: #{datetime_from_partitionkey_reverse(@pkey_start)} and ends #{datetime_from_partitionkey_reverse(@pkey_end)}")
        query_filter = "(PartitionKey lt '#{@pkey_start}9999999' and PartitionKey ge '#{@pkey_end}9999999')"
     else
        @pkey_end = partitionkey_from_datetime( (Time.now.utc - 3*60).iso8601 )
-       @logger.info("[#{@table_name}] Query starts: #{datetime_from_partitionkey(@pkey_start)} and ends #{datetime_from_partitionkey(@pkey_end)}")
+       @logger.info("[#{@account_name} #{@table_name}] Query starts: #{datetime_from_partitionkey(@pkey_start)} and ends #{datetime_from_partitionkey(@pkey_end)}")
        query_filter = "(PartitionKey gt '0#{@pkey_start}' and PartitionKey le '0#{@pkey_end}')"
        if @table_name == "LinuxsyslogVer2v0"
           for i in 0..99
@@ -87,7 +87,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
        end
     end
     query_filter = query_filter.gsub('"','')
-    @logger.info("[#{@table_name}] Query filter: " + query_filter)
+    @logger.info("[#{@account_name} #{@table_name}] Query filter: " + query_filter)
 
     # # # # #
     # Execute until the continuation data is empty
@@ -98,7 +98,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
        @continuation_token = result.continuation_token
        # If results
        if result and result.length > 0
-          @logger.info("[#{@table_name}] Retrieved #{result.length} entries. Continuation: #{@continuation_token}")
+          @logger.info("[#{@account_name} #{@table_name}] Retrieved #{result.length} entries. Continuation: #{@continuation_token}")
           # Iteration through all and send
           result.each do |entity|
              if @reversetimestamp
@@ -107,6 +107,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
                 event = LogStash::Event.new(entity.properties)
              end
              event.set("table_name" , @table_name)
+             event.set("storageaccount", @account_name)
              decorate(event)
              output_queue << event
           end # each block
@@ -128,11 +129,11 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
           end
        # If no results
        else
-          @logger.info("[#{@table_name}] No new results found.")
+          @logger.info("[#{@account_name} #{@table_name}] No new results found.")
        end
        # Sleep a bit if continuation loop is going to happen
        if !@continuation_token.nil?
-          @logger.info("[#{@table_name}] Continuation will be performed")
+          @logger.info("[#{@account_name} #{@table_name}] Continuation will be performed")
           sleep 1
        end 
     end until @continuation_token.nil?
@@ -150,7 +151,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
   def partitionkey_from_datetime(time_string)
     collection_time = Time.parse(time_string)
     if collection_time
-      @logger.debug("[#{@table_name}] Collection time parsed: #{collection_time}")
+      @logger.debug("[#{@account_name} #{@table_name}] Collection time parsed: #{collection_time}")
     else
       raise(ArgumentError, "Could not parse the time_string")
     end # if else block
@@ -170,7 +171,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
   def partitionkey_from_datetime_reverse(time_string)
     collection_time = Time.parse(time_string)
     if collection_time
-      @logger.debug("[#{@table_name}] Reverse collection time parsed: #{collection_time}")
+      @logger.debug("[#{@account_name} #{@table_name}] Reverse collection time parsed: #{collection_time}")
     else
       raise(ArgumentError, "Could not parse the time_string")
     end # if else block

@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    logstash-input-azuretablemulti (1.0.0)
+    logstash-input-azuretablemulti (1.0.1)
       azure (~> 0.7.3)
       logstash-core-plugin-api (>= 1.60, <= 2.99)
 

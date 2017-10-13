@@ -1,3 +1,6 @@
+## 2017.10.12 (DS)
+* Added some info on logs and events (storage account)
+
 ## 2017.01.03 (Dimitris Strevinas)
 * Modified to use PartitionKey instead of timestamps
 * Support of SLAB tables with reverse timestamps
