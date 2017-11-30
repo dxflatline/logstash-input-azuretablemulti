@@ -56,7 +56,6 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
   public
   def run(output_queue)
     while !stop?
-      @logger.info("[#{@account_name} #{@table_name}] Process re-executed @" + Time.now.to_s);
       process(output_queue)
       sleep @idle_delay_seconds
     end # while
@@ -89,9 +88,11 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
     query_filter = query_filter.gsub('"','')
     @logger.info("[#{@account_name} #{@table_name}] Query filter: " + query_filter)
 
-    # # # # #
-    # Execute until the continuation data is empty
-    begin
+    # Prevent the same start - end 
+    if @pkey_start!=@pkey_end
+     # # # # #
+     # Execute until the continuation data is empty
+     begin
        # Perform the query
        query = { :top => @entity_count_to_process, :filter => query_filter, :continuation_token => @continuation_token }
        result = @azure_table_service.query_entities(@table_name, query)
@@ -136,7 +137,11 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
           @logger.info("[#{@account_name} #{@table_name}] Continuation will be performed")
           sleep 1
        end 
-    end until @continuation_token.nil?
+     end until @continuation_token.nil?
+    else
+     @logger.info("[#{@account_name} #{@table_name}] Zero time span query. Next time.")
+    end
+    @logger.info("[#{@account_name} #{@table_name}] Query ended")
     
   rescue => e
     @logger.error("[#{@table_name}] Oh My, An error occurred.", :exception => e)

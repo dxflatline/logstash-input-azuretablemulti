@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name            = 'logstash-input-azuretablemulti'
-  s.version         = '1.0.1'
+  s.version         = '1.0.1dc'
   s.licenses        = ['Apache License (2.0)']
   s.summary         = "Modification of the original MS Plugin to read data from Azure WAD Tables"
   s.description     = "This gem is a Logstash plugin. Modification of the original MS Plugin to read data from Azure WAD Tables"
