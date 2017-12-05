@@ -36,12 +36,16 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
       config.storage_table_host = "https://#{@account_name}.table.#{@endpoint}"
     end
     @azure_table_service = Azure::Table::TableService.new
+    @logger.info("[#{@account_name} #{@table_name}] Registered new table instance.")
     @continuation_token = nil
 
     # Check if collection time was provided
-    # TODO: Check if not empty - to take into consideration
-    @collection_start_time_utc = (Time.now.utc - 3*60).iso8601 #Time.now.utc.iso8601
-
+    if !@collection_start_time_utc
+        @collection_start_time_utc = (Time.now.utc - 3*60).iso8601 #Time.now.utc.iso8601
+        @logger.info("[#{@account_name} #{@table_name}] Beginning execution at current datetime. No start time or sincedb entry.")
+    else
+        @logger.info("[#{@account_name} #{@table_name}] Beginning execution at #{@collection_start_time_utc}. Start time provided.")
+        
     @pkey_start = -1
     @pkey_end = -1
     # Compute the date from collection_start_time_utc
@@ -76,7 +80,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
        @logger.info("[#{@account_name} #{@table_name}] Query starts: #{datetime_from_partitionkey_reverse(@pkey_start)} and ends #{datetime_from_partitionkey_reverse(@pkey_end)}")
        query_filter = "(PartitionKey lt '#{@pkey_start}9999999' and PartitionKey ge '#{@pkey_end}9999999')"
     else
-       @pkey_end = partitionkey_from_datetime( (Time.now.utc - 3*60).iso8601 )
+       @pkey_end = @pkey_start + 3000000000
        @logger.info("[#{@account_name} #{@table_name}] Query starts: #{datetime_from_partitionkey(@pkey_start)} and ends #{datetime_from_partitionkey(@pkey_end)}")
        query_filter = "(PartitionKey gt '0#{@pkey_start}' and PartitionKey le '0#{@pkey_end}')"
        if @table_name == "LinuxsyslogVer2v0"
@@ -99,7 +103,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
        @continuation_token = result.continuation_token
        # If results
        if result and result.length > 0
-          @logger.info("[#{@account_name} #{@table_name}] Retrieved #{result.length} entries. Continuation: #{@continuation_token}")
+          @logger.info("[#{@account_name} #{@table_name}] Query resulted in #{result.length} entries. Continuation: #{@continuation_token}")
           # Iteration through all and send
           result.each do |entity|
              if @reversetimestamp
@@ -141,7 +145,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
     else
      @logger.info("[#{@account_name} #{@table_name}] Zero time span query. Next time.")
     end
-    @logger.info("[#{@account_name} #{@table_name}] Query ended")
+    @logger.info("[#{@account_name} #{@table_name}] Query and processing ended")
     
   rescue => e
     @logger.error("[#{@table_name}] Oh My, An error occurred.", :exception => e)
