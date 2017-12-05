@@ -45,6 +45,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
         @logger.info("[#{@account_name} #{@table_name}] Beginning execution at current datetime. No start time or sincedb entry.")
     else
         @logger.info("[#{@account_name} #{@table_name}] Beginning execution at #{@collection_start_time_utc}. Start time provided.")
+    end
         
     @pkey_start = -1
     @pkey_end = -1
