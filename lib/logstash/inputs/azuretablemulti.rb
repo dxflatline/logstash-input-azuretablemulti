@@ -19,6 +19,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
   config :idle_delay_seconds, :validate => :number, :default => 5
   config :endpoint, :validate => :string, :default => "core.windows.net"
   config :reversetimestamp, :validate => :boolean, :default => false
+  config :customfilter, :validate => :string
 
   TICKS_SINCE_EPOCH = Time.utc(0001, 01, 01).to_i * 10000000
 
@@ -77,7 +78,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
     # Construct query (pkey_end is always 3 minutes back)
     # If continuation token exists then use the same query
     if @reversetimestamp
-       @pkey_end = partitionkey_from_datetime_reverse( (Time.now.utc - 3*60).iso8601 )
+       @pkey_end = @pkey_start - 300
        @logger.info("[#{@account_name} #{@table_name}] Query starts: #{datetime_from_partitionkey_reverse(@pkey_start)} and ends #{datetime_from_partitionkey_reverse(@pkey_end)}")
        query_filter = "(PartitionKey lt '#{@pkey_start}9999999' and PartitionKey ge '#{@pkey_end}9999999')"
     else
@@ -89,6 +90,9 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
             query_filter << " or (PartitionKey gt '#{i.to_s.rjust(19, '0')}___0#{@pkey_start}' and PartitionKey lt '#{i.to_s.rjust(19, '0')}___0#{@pkey_end}')"
           end # for block
        end
+    end
+    if @customfilter
+       query_filter = query_filter + " " + @customfilter
     end
     query_filter = query_filter.gsub('"','')
     @logger.info("[#{@account_name} #{@table_name}] Query filter: " + query_filter)
@@ -102,9 +106,10 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
        query = { :top => @entity_count_to_process, :filter => query_filter, :continuation_token => @continuation_token }
        result = @azure_table_service.query_entities(@table_name, query)
        @continuation_token = result.continuation_token
+       @logger.info("[#{@account_name} #{@table_name}] Query completed. Continuation: #{@continuation_token}")
        # If results
        if result and result.length > 0
-          @logger.info("[#{@account_name} #{@table_name}] Query resulted in #{result.length} entries. Continuation: #{@continuation_token}")
+          @logger.info("[#{@account_name} #{@table_name}] Query output of #{result.length} start processing.")
           # Iteration through all and send
           result.each do |entity|
              if @reversetimestamp
