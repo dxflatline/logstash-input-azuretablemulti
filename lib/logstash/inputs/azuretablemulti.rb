@@ -15,6 +15,7 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
   config :table_name, :validate => :string
   config :entity_count_to_process, :validate => :string, :default => 100
   config :collection_start_time_utc, :validate => :string
+  config :collection_end_time_utc, :validate => :string
   config :etw_pretty_print, :validate => :boolean, :default => false
   config :idle_delay_seconds, :validate => :number, :default => 5
   config :endpoint, :validate => :string, :default => "core.windows.net"
@@ -47,7 +48,17 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
     else
         @logger.info("[#{@account_name} #{@table_name}] Beginning execution at #{@collection_start_time_utc}. Start time provided.")
     end
-        
+
+    @pkey_fixed_end = -1
+    if @collection_start_time_utc
+        @logger.info("[#{@account_name} #{@table_name}] Will end execution at #{@collection_end_time_utc}. End time provided.")
+        if @reversetimestamp
+           @pkey_fixed_end = partitionkey_from_datetime_reverse(@collection_end_time_utc)
+        else
+           @pkey_fixed_end = partitionkey_from_datetime(@collection_end_time_utc)
+        end        
+    end
+
     @pkey_start = -1
     @pkey_end = -1
     # Compute the date from collection_start_time_utc
@@ -90,6 +101,11 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
             query_filter << " or (PartitionKey gt '#{i.to_s.rjust(19, '0')}___0#{@pkey_start}' and PartitionKey lt '#{i.to_s.rjust(19, '0')}___0#{@pkey_end}')"
           end # for block
        end
+    end
+    # If we reached the fixed end date, equalize start and end to make the query empty on the run below
+    if @pkey_end >= @pkey_fixed_end
+       @pkey_end = @pkey_fixed_end
+       @pkey_start = @pkey_fixed_end
     end
     if @customfilter
        query_filter = query_filter + " " + @customfilter
