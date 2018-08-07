@@ -41,21 +41,20 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
     @logger.info("[#{@account_name} #{@table_name}] Registered new table instance.")
     @continuation_token = nil
 
-    # Check if collection time was provided
+    # Check if collection start time was explicitely provided, if yes, also consider colleection end date
+    @pkey_fixed_end = -1
     if !@collection_start_time_utc
         @collection_start_time_utc = (Time.now.utc - 3*60).iso8601 #Time.now.utc.iso8601
-        @logger.info("[#{@account_name} #{@table_name}] Beginning execution at current datetime. No start time or sincedb entry.")
+        @logger.info("[#{@account_name} #{@table_name}] Beginning execution at current datetime - 3 minutes. No start time or sincedb entry.")
     else
         @logger.info("[#{@account_name} #{@table_name}] Beginning execution at #{@collection_start_time_utc}. Start time provided.")
-    end
-
-    @pkey_fixed_end = -1
-    if @collection_start_time_utc
-        @logger.info("[#{@account_name} #{@table_name}] Will end execution at #{@collection_end_time_utc}. End time provided.")
-        if @reversetimestamp
-           @pkey_fixed_end = partitionkey_from_datetime_reverse(@collection_end_time_utc)
-        else
-           @pkey_fixed_end = partitionkey_from_datetime(@collection_end_time_utc)
+        if @collection_end_time_utc
+            @logger.info("[#{@account_name} #{@table_name}] Will end execution at #{@collection_end_time_utc}. End time provided.")
+            if @reversetimestamp
+                @pkey_fixed_end = partitionkey_from_datetime_reverse(@collection_end_time_utc)
+            else
+                @pkey_fixed_end = partitionkey_from_datetime(@collection_end_time_utc)
+            end
         end        
     end
 
@@ -84,46 +83,71 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
   end  
 
 
+
+
   def process(output_queue)
-    # # # # # #
-    # Construct query (pkey_end is always 3 minutes back)
-    # If continuation token exists then use the same query
+
+    #
+    # Construct query (pkey_end is always 5 minutes after)
+    #
     if @reversetimestamp
        @pkey_end = @pkey_start - 300
+       #
+       # Now if pkey_end is higher that utc_now - 3, ignore
+       #
+       if @pkey_end < partitionkey_from_datetime_reverse((Time.now.utc - 3*60).iso8601)
+          return          
+       end
        @logger.info("[#{@account_name} #{@table_name}] Query starts: #{datetime_from_partitionkey_reverse(@pkey_start)} and ends #{datetime_from_partitionkey_reverse(@pkey_end)}")
        query_filter = "(PartitionKey lt '#{@pkey_start}9999999' and PartitionKey ge '#{@pkey_end}9999999')"
     else
        @pkey_end = @pkey_start + 3000000000
+       #
+       # Now if pkey_end is higher that utc_now - 3, ignore
+       #
+       if @pkey_end > partitionkey_from_datetime((Time.now.utc - 3*60).iso8601)
+          return
+       end
        @logger.info("[#{@account_name} #{@table_name}] Query starts: #{datetime_from_partitionkey(@pkey_start)} and ends #{datetime_from_partitionkey(@pkey_end)}")
        query_filter = "(PartitionKey gt '0#{@pkey_start}' and PartitionKey le '0#{@pkey_end}')"
-       if @table_name == "LinuxsyslogVer2v0"
-          for i in 0..99
-            query_filter << " or (PartitionKey gt '#{i.to_s.rjust(19, '0')}___0#{@pkey_start}' and PartitionKey lt '#{i.to_s.rjust(19, '0')}___0#{@pkey_end}')"
-          end # for block
-       end
     end
+
     # If we reached the fixed end date, equalize start and end to make the query empty on the run below
-    if @pkey_end >= @pkey_fixed_end
-       @pkey_end = @pkey_fixed_end
-       @pkey_start = @pkey_fixed_end
-    end
+    # TODO: Bug - consider the two timestamp formats
+    #if @pkey_fixed_end != -1
+    #   if @pkey_end >= @pkey_fixed_end
+    #      @pkey_end = @pkey_fixed_end
+    #      @pkey_start = @pkey_fixed_end
+    #   end
+    #end
+
     if @customfilter
        query_filter = query_filter + " " + @customfilter
     end
     query_filter = query_filter.gsub('"','')
     @logger.info("[#{@account_name} #{@table_name}] Query filter: " + query_filter)
 
+    #
     # Prevent the same start - end 
+    #
     if @pkey_start!=@pkey_end
-     # # # # #
+
+     #
      # Execute until the continuation data is empty
+     #
      begin
+
+       #
        # Perform the query
+       #
        query = { :top => @entity_count_to_process, :filter => query_filter, :continuation_token => @continuation_token }
        result = @azure_table_service.query_entities(@table_name, query)
        @continuation_token = result.continuation_token
        @logger.info("[#{@account_name} #{@table_name}] Query completed. Continuation: #{@continuation_token}")
+
+       #
        # If results
+       #
        if result and result.length > 0
           @logger.info("[#{@account_name} #{@table_name}] Query output of #{result.length} start processing.")
           # Iteration through all and send
@@ -154,19 +178,29 @@ class LogStash::Inputs::AzureTableMulti < LogStash::Inputs::Base
                 end
              end 
           end
+
+       #
        # If no results
+       #
        else
+          @pkey_start=@pkey_end
           @logger.info("[#{@account_name} #{@table_name}] No new results found.")
        end
+
+       #
        # Sleep a bit if continuation loop is going to happen
+       #
        if !@continuation_token.nil?
           @logger.info("[#{@account_name} #{@table_name}] Continuation will be performed")
           sleep 1
        end 
+
      end until @continuation_token.nil?
+
     else
      @logger.info("[#{@account_name} #{@table_name}] Zero time span query. Next time.")
     end
+
     @logger.info("[#{@account_name} #{@table_name}] Query and processing ended")
     
   rescue => e
